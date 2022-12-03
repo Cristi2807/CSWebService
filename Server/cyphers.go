@@ -1,6 +1,8 @@
 package main
 
-import "strings"
+import (
+	"strings"
+)
 
 type CypherType string
 
@@ -164,7 +166,6 @@ func encryptVigenere(text string, strKey string) string {
 }
 
 func decryptVigenere(text string, strKey string) string {
-
 	text = strings.ToUpper(text)
 	strKey = strings.ToUpper(strKey)
 

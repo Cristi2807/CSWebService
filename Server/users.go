@@ -4,22 +4,30 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"github.com/golang-jwt/jwt"
 	"golang.org/x/crypto/bcrypt"
 	"hash"
 	"io"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 )
 
 type User struct {
-	PasswordHash string    `json:"passwordHash"`
-	TokenHash    string    `json:"tokenHash"`
-	ValidUntil   time.Time `json:"validUntil"`
+	PasswordHash string `json:"passwordHash"`
+}
+
+type JWTClaim struct {
+	Username string `json:"username"`
+	jwt.StandardClaims
 }
 
 var users = make(map[string]User)
+
+var keyJWT = []byte("$2a$14$GGZuMlctthtXauMvN3YQweZGvJhPPLx6wcUjJGOxTOnAOB9pwD/a6")
 
 func loadUsers() {
 	file, _ := os.ReadFile("users.json")
@@ -48,14 +56,14 @@ func CheckPasswordHash(password, hash string) bool {
 
 //Check Login
 
-func checkLogin(w http.ResponseWriter, username string, tokenHash string) bool {
+func checkLogin(w http.ResponseWriter, tokenStr string) bool {
 
-	if _, ok := users[username]; !ok {
+	if tokenStr == "" {
 		dataMarshalled, _ := json.Marshal(
 			struct {
 				Error string `json:"error"`
 			}{
-				"Invalid Username!",
+				"Please sign in or sign up!",
 			},
 		)
 
@@ -66,50 +74,33 @@ func checkLogin(w http.ResponseWriter, username string, tokenHash string) bool {
 		return false
 	}
 
-	if tokenHash == "" {
+	err := ValidateToken(tokenStr)
+
+	if err != nil {
+
+		if strings.Index(err.Error(), "token is expired by") != -1 {
+			dataMarshalled, _ := json.Marshal(
+				struct {
+					Error string `json:"error"`
+				}{
+					"Current session expired. Log in again!",
+				},
+			)
+
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			w.Write(dataMarshalled)
+
+			return false
+		}
+
 		dataMarshalled, _ := json.Marshal(
 			struct {
 				Error string `json:"error"`
 			}{
-				"Please log in firstly!",
+				"Token corrupted. Log in again!",
 			},
 		)
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusConflict)
-		w.Write(dataMarshalled)
-
-		return false
-	}
-
-	if tokenHash != users[username].TokenHash {
-		dataMarshalled, _ := json.Marshal(
-			struct {
-				Error string `json:"error"`
-			}{
-				"Session Token corrupted. Log in again!",
-			},
-		)
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusConflict)
-		w.Write(dataMarshalled)
-
-		return false
-	}
-
-	if time.Now().Sub(users[username].ValidUntil) > 0 {
-		dataMarshalled, _ := json.Marshal(
-			struct {
-				Error string `json:"error"`
-			}{
-				"Your current session expired. Log in again!",
-			},
-		)
-
-		users[username] = User{PasswordHash: users[username].PasswordHash,
-			TokenHash:  "",
-			ValidUntil: time.Now()}
 
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusConflict)
@@ -176,4 +167,43 @@ func generateKeyPair(bits int) (*rsa.PrivateKey, *rsa.PublicKey) {
 
 	// The public key is part of the PrivateKey struct
 	return privateKey1, &privateKey1.PublicKey
+}
+
+//JSON Web Token
+
+func GenerateJWT(username string) (tokenString string, err error) {
+	expirationTime := time.Now().Add(30 * time.Minute)
+	claims := &JWTClaim{
+		Username: username,
+		StandardClaims: jwt.StandardClaims{
+			ExpiresAt: expirationTime.Unix(),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err = token.SignedString(keyJWT)
+	return
+}
+
+func ValidateToken(signedToken string) (err error) {
+	token, err := jwt.ParseWithClaims(
+		signedToken,
+		&JWTClaim{},
+		func(token *jwt.Token) (interface{}, error) {
+			return keyJWT, nil
+		},
+	)
+	if err != nil {
+		return
+	}
+	claims, ok := token.Claims.(*JWTClaim)
+
+	if !ok {
+		err = errors.New("couldn't parse claims")
+		return
+	}
+	if claims.ExpiresAt < time.Now().Local().Unix() {
+		err = errors.New("token expired")
+		return
+	}
+	return
 }

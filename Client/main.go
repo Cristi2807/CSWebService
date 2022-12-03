@@ -159,11 +159,9 @@ func logoutAccount(userName string, password string) {
 
 }
 
-func sendRequestCypher(userName string, cypherType CypherType, method string, message string, key int, strKey string) string {
+func sendRequestCypher(cypherType CypherType, method string, message string, key int, strKey string) string {
 
 	type Cell struct {
-		Username      string        `json:"username"`
-		TokenHash     string        `json:"tokenHash"`
 		CypherRequest Request       `json:"cypherRequest"`
 		PublicKey     rsa.PublicKey `json:"publicKey"`
 	}
@@ -172,8 +170,6 @@ func sendRequestCypher(userName string, cypherType CypherType, method string, me
 
 	var cypherReq Request
 
-	cell.Username = userName
-	cell.TokenHash = TOKEN
 	cell.PublicKey = *publicKey
 
 	cypherReq.Cypher = cypherType
@@ -190,11 +186,13 @@ func sendRequestCypher(userName string, cypherType CypherType, method string, me
 
 	rBody := bytes.NewBuffer(cipherText)
 
-	req, _ := http.Post("http://localhost:8080", "application/json", rBody)
+	req, _ := http.NewRequest(http.MethodPost, "http://localhost:8080", rBody)
+	req.Header.Set("Token", TOKEN)
+	resp, _ := http.DefaultClient.Do(req)
 
-	if req.StatusCode == http.StatusOK {
+	if resp.StatusCode == http.StatusOK {
 
-		body, _ := io.ReadAll(req.Body)
+		body, _ := io.ReadAll(resp.Body)
 		defer req.Body.Close()
 
 		decMessage, _ := DecryptOAEP(sha256.New(), rand.Reader, privateKey, body, nil)
@@ -208,7 +206,7 @@ func sendRequestCypher(userName string, cypherType CypherType, method string, me
 
 		var cellError Cell
 
-		json.NewDecoder(req.Body).Decode(&cellError)
+		json.NewDecoder(resp.Body).Decode(&cellError)
 
 		fmt.Println(cellError)
 	}
@@ -231,7 +229,6 @@ func main() {
 	//logoutAccount("cristi", "12345678")
 
 	fmt.Println(sendRequestCypher(
-		"cristi",
 		Vigenere,
 		"decrypt",
 		"GBTDXGBUXQFFNDPRFMGFIJFURP",

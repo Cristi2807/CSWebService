@@ -10,7 +10,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"time"
 )
 
 var publicKey *rsa.PublicKey
@@ -139,17 +138,9 @@ func loginAccount(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Println("Account", cell.Username, "is logged in!")
 
-	tokenHash, _ := HashPassword(cell.Username + users[cell.Username].ValidUntil.String())
+	tokenString, _ := GenerateJWT(cell.Username)
 
-	users[cell.Username] = User{
-		PasswordHash: users[cell.Username].PasswordHash,
-		ValidUntil:   time.Now().Add(30 * time.Minute),
-		TokenHash:    tokenHash,
-	}
-
-	saveUsers()
-
-	cipherText, _ := EncryptOAEP(sha256.New(), rand.Reader, &cell.PublicKey, []byte(tokenHash), nil)
+	cipherText, _ := EncryptOAEP(sha256.New(), rand.Reader, &cell.PublicKey, []byte(tokenString), nil)
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
@@ -206,18 +197,12 @@ func logoutAccount(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Println("Account", cell.Username, "is logged out!")
 
-	users[cell.Username] = User{
-		PasswordHash: users[cell.Username].PasswordHash,
-		ValidUntil:   time.Now(),
-		TokenHash:    "",
-	}
-
-	saveUsers()
-
 	w.WriteHeader(http.StatusOK)
 }
 
 func handleRequestCyphers(w http.ResponseWriter, r *http.Request) {
+
+	tokenStr := r.Header.Get("Token")
 
 	body, _ := io.ReadAll(r.Body)
 	defer r.Body.Close()
@@ -225,8 +210,6 @@ func handleRequestCyphers(w http.ResponseWriter, r *http.Request) {
 	decMessage, _ := DecryptOAEP(sha256.New(), rand.Reader, privateKey, body, nil)
 
 	type Cell struct {
-		Username      string        `json:"username"`
-		TokenHash     string        `json:"tokenHash"`
 		CypherRequest Request       `json:"cypherRequest"`
 		PublicKey     rsa.PublicKey `json:"publicKey"`
 	}
@@ -235,7 +218,7 @@ func handleRequestCyphers(w http.ResponseWriter, r *http.Request) {
 
 	json.Unmarshal(decMessage, &cell)
 
-	if !checkLogin(w, cell.Username, cell.TokenHash) {
+	if !checkLogin(w, tokenStr) {
 		return
 	}
 
