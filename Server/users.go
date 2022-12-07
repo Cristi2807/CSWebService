@@ -26,6 +26,7 @@ type User struct {
 
 type JWTClaim struct {
 	Username string `json:"username"`
+	Role     string `json:"role"`
 	jwt.StandardClaims
 }
 
@@ -62,7 +63,7 @@ func CheckPasswordHash(password, hash string) bool {
 
 //Check Login
 
-func checkLogin(w http.ResponseWriter, tokenStr string) bool {
+func checkLogin(w http.ResponseWriter, tokenStr string, cypherType CypherType) bool {
 
 	if tokenStr == "" {
 		dataMarshalled, _ := json.Marshal(
@@ -113,6 +114,23 @@ func checkLogin(w http.ResponseWriter, tokenStr string) bool {
 		w.Write(dataMarshalled)
 
 		return false
+	}
+
+	token, _ := jwt.ParseWithClaims(
+		tokenStr,
+		&JWTClaim{},
+		func(token *jwt.Token) (interface{}, error) {
+			return keyJWT, nil
+		},
+	)
+
+	claims, _ := token.Claims.(*JWTClaim)
+
+	if claims.Role == "user" && cypherType == CaesarPerm {
+		w.WriteHeader(http.StatusForbidden)
+
+		return false
+
 	}
 
 	return true
@@ -177,10 +195,11 @@ func generateKeyPair(bits int) (*rsa.PrivateKey, *rsa.PublicKey) {
 
 //JSON Web Token
 
-func GenerateJWT(username string) (tokenString string, err error) {
+func GenerateJWT(username string, role string) (tokenString string, err error) {
 	expirationTime := time.Now().Add(30 * time.Minute)
 	claims := &JWTClaim{
 		Username: username,
+		Role:     role,
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: expirationTime.Unix(),
 		},

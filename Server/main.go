@@ -110,7 +110,7 @@ func loginAccount(w http.ResponseWriter, r *http.Request) {
 	if tokenStr != "" && ValidateOTPToken(tokenStr, cell.OTPPass) == nil {
 		fmt.Println("Account", cell.Username, "is logged in!")
 
-		tokenString, _ := GenerateJWT(cell.Username)
+		tokenString, _ := GenerateJWT(cell.Username, "user")
 
 		cipherText, _ := EncryptOAEP(sha256.New(), rand.Reader, &cell.PublicKey, []byte(tokenString), nil)
 
@@ -256,7 +256,7 @@ func handleRequestCyphers(w http.ResponseWriter, r *http.Request) {
 
 	json.Unmarshal(decMessage, &cell)
 
-	if !checkLogin(w, tokenStr) {
+	if !checkLogin(w, tokenStr, cell.CypherRequest.Cypher) {
 		return
 	}
 

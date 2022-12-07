@@ -215,6 +215,10 @@ func sendRequestCypher(cypherType CypherType, method string, message string, key
 
 		return string(decMessage)
 
+	} else if resp.StatusCode == http.StatusForbidden {
+
+		fmt.Println("Status forbidden. Not allowed to use this cypher.")
+
 	} else {
 		type Cell struct {
 			Error string `json:"error"`
@@ -240,12 +244,12 @@ func main() {
 
 	//createAccount("cristi", "12345678")
 
-	//loginAccount("cristi", "12345678", "")
+	loginAccount("cristi", "12345678", "348696")
 
 	//logoutAccount("cristi", "12345678")
 
 	//fmt.Println(sendRequestCypher(
-	//	Vigenere,
+	//	CaesarPerm,
 	//	"decrypt",
 	//	"GBTDXGBUXQFFNDPRFMGFIJFURP",
 	//	0,
