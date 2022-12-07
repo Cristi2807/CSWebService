@@ -3,6 +3,8 @@ package main
 import (
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,8 +12,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"hash"
 	"io"
+	rn "math/rand"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -28,6 +32,8 @@ type JWTClaim struct {
 var users = make(map[string]User)
 
 var keyJWT = []byte("$2a$14$GGZuMlctthtXauMvN3YQweZGvJhPPLx6wcUjJGOxTOnAOB9pwD/a6")
+
+var keyOTP = []byte("14$GGZuMlctthtXauMvN3YQweZGvJhPPLx6wcUjJGOxTOnAOB9pw")
 
 func loadUsers() {
 	file, _ := os.ReadFile("users.json")
@@ -206,4 +212,80 @@ func ValidateToken(signedToken string) (err error) {
 		return
 	}
 	return
+}
+
+// OTP Token
+
+type OTPClaim struct {
+	Username  string `json:"username"`
+	ExpiresAt int64  `json:"expiresAt"`
+}
+
+func GenerateOTPToken(username string) (tokenString string) {
+
+	var claims OTPClaim
+
+	claims.Username = username
+	claims.ExpiresAt = time.Now().Add(time.Minute).Unix()
+
+	claimsMarshalled, _ := json.Marshal(claims)
+
+	claimsBase64 := base64.StdEncoding.EncodeToString(claimsMarshalled)
+
+	var bs []byte
+
+	s1 := rn.NewSource(time.Now().UnixNano())
+	r1 := rn.New(s1)
+	randomInt := 100000 + r1.Intn(900000)
+	fmt.Println("OTP for user", claims.Username, "is", randomInt)
+
+	bs = append(bs, claimsMarshalled...)
+	bs = append(bs, []byte(strconv.Itoa(randomInt))...)
+	bs = append(bs, keyOTP...)
+
+	h := sha256.New()
+	h.Write(bs)
+
+	bs1 := h.Sum(nil)
+
+	bsBase64 := base64.StdEncoding.EncodeToString(bs1)
+
+	return claimsBase64 + "." + bsBase64
+}
+
+func ValidateOTPToken(signedToken string, passcode string) (err error) {
+
+	claimsBase64 := signedToken[0:strings.Index(signedToken, ".")]
+	hashBase64 := signedToken[(strings.Index(signedToken, ".") + 1):]
+
+	var claims OTPClaim
+
+	claimsMarshalled, _ := base64.StdEncoding.DecodeString(claimsBase64)
+
+	json.Unmarshal(claimsMarshalled, &claims)
+
+	if claims.ExpiresAt < time.Now().Local().Unix() {
+		err = errors.New("token expired")
+		return
+	}
+
+	var bs []byte
+
+	bs = append(bs, claimsMarshalled...)
+	bs = append(bs, []byte(passcode)...)
+	bs = append(bs, keyOTP...)
+
+	h := sha256.New()
+	h.Write(bs)
+
+	bs1 := h.Sum(nil)
+
+	bsBase64 := base64.StdEncoding.EncodeToString(bs1)
+
+	if hashBase64 != bsBase64 {
+		err = errors.New("OTP invalid")
+		return
+	}
+
+	return nil
 }

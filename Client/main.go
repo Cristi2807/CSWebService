@@ -66,11 +66,12 @@ func createAccount(userName string, password string) {
 
 }
 
-func loginAccount(userName string, password string) {
+func loginAccount(userName string, password string, OTPPass string) {
 
 	type Cell struct {
 		Username  string        `json:"username"`
 		Password  string        `json:"password"`
+		OTPPass   string        `json:"OTPPass"`
 		PublicKey rsa.PublicKey `json:"publicKey"`
 	}
 
@@ -79,6 +80,7 @@ func loginAccount(userName string, password string) {
 	cell.Username = userName
 	cell.Password = password
 	cell.PublicKey = *publicKey
+	cell.OTPPass = OTPPass
 
 	cellMarshalled, _ := json.Marshal(cell)
 
@@ -87,6 +89,7 @@ func loginAccount(userName string, password string) {
 	rBody := bytes.NewBuffer(cipherText)
 
 	req, _ := http.NewRequest(http.MethodPut, "http://localhost:8080/users", rBody)
+	req.Header.Set("OTPToken", TOKEN)
 	resp, _ := http.DefaultClient.Do(req)
 
 	if resp.StatusCode == http.StatusOK {
@@ -101,6 +104,19 @@ func loginAccount(userName string, password string) {
 		saveToken()
 
 		fmt.Println("Account", cell.Username, "logged in successfully!")
+	} else if resp.StatusCode == http.StatusAccepted {
+
+		body, _ := io.ReadAll(resp.Body)
+		defer resp.Body.Close()
+
+		decMessage, _ := DecryptOAEP(sha256.New(), rand.Reader, privateKey, body, nil)
+
+		TOKEN = string(decMessage)
+
+		saveToken()
+
+		fmt.Println("OTP was sent.")
+
 	} else {
 
 		type Cell struct {
@@ -224,16 +240,16 @@ func main() {
 
 	//createAccount("cristi", "12345678")
 
-	//loginAccount("cristi", "12345678")
+	//loginAccount("cristi", "12345678", "")
 
 	//logoutAccount("cristi", "12345678")
 
-	fmt.Println(sendRequestCypher(
-		Vigenere,
-		"decrypt",
-		"GBTDXGBUXQFFNDPRFMGFIJFURP",
-		0,
-		"NULLPointer",
-	))
+	//fmt.Println(sendRequestCypher(
+	//	Vigenere,
+	//	"decrypt",
+	//	"GBTDXGBUXQFFNDPRFMGFIJFURP",
+	//	0,
+	//	"NULLPointer",
+	//))
 
 }
